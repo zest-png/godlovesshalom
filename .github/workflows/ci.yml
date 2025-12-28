@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & start stack
+        run: |
+          docker compose up -d --build
+
+      - name: Wait for API
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://localhost:8000/health > /dev/null; then
+              echo "API ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API not ready in time"
+          docker compose ps
+          docker compose logs --tail=200
+          exit 1
+
+      - name: Enqueue a worker task
+        run: |
+          curl -fsS -X POST http://localhost:8000/tasks/echo \
+            -H "content-type: application/json" \
+            -d '{"message":"ci-smoke"}'
+
+      - name: Assert worker processed task
+        run: |
+          for i in {1..60}; do
+            if docker compose logs python-worker --tail=200 | grep -q "echo task received: ci-smoke"; then
+              echo "Worker processed task"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Worker did not process task in time"
+          docker compose ps
+          docker compose logs python-worker --tail=200
+          exit 1
+
+      - name: Shutdown
+        if: always()
+        run: docker compose down -v
+
+  prod-compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & start prod stack
+        run: |
+          docker compose -f docker-compose.prod.yml up -d --build
+
+      - name: Wait for API
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://localhost:8000/health > /dev/null; then
+              echo "API ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API not ready in time"
+          docker compose -f docker-compose.prod.yml ps
+          docker compose -f docker-compose.prod.yml logs --tail=200
+          exit 1
+
+      - name: Wait for web (nginx)
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://localhost:3000/ > /dev/null; then
+              echo "Web ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Web not ready in time"
+          docker compose -f docker-compose.prod.yml ps
+          docker compose -f docker-compose.prod.yml logs --tail=200
+          exit 1
+
+      - name: Verify /api proxy works
+        run: |
+          curl -fsS http://localhost:3000/api/health
+
+      - name: Enqueue a worker task via /api proxy
+        run: |
+          curl -fsS -X POST http://localhost:3000/api/tasks/echo \
+            -H "content-type: application/json" \
+            -d '{"message":"ci-prod-smoke"}'
+
+      - name: Assert worker processed task
+        run: |
+          for i in {1..60}; do
+            if docker compose -f docker-compose.prod.yml logs python-worker --tail=200 | grep -q "echo task received: ci-prod-smoke"; then
+              echo "Worker processed task"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Worker did not process task in time"
+          docker compose -f docker-compose.prod.yml ps
+          docker compose -f docker-compose.prod.yml logs python-worker --tail=200
+          exit 1
+
+      - name: Shutdown
+        if: always()
+        run: docker compose -f docker-compose.prod.yml down -v
+
+
