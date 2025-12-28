@@ -1,0 +1,19 @@
+# 說明：
+# - 這裡的 owner 需要是 GitHub 使用者或 team，例如：
+#   - @your-username
+#   - @your-org/your-team
+# - 你可以把下面的 @YOUR_OWNER 改成你們團隊的 owner
+
+* @YOUR_OWNER
+
+# 前端
+/node-app/ @YOUR_OWNER
+
+# Python API/Worker
+/py-app/ @YOUR_OWNER
+
+# CI / DevOps
+/.github/ @YOUR_OWNER
+/docker-compose*.yml @YOUR_OWNER
+
+

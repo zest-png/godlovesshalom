@@ -99,4 +99,9 @@ docker run --rm -v ${PWD}:/repo -w /repo/py-app python:3.13-slim bash -lc "pytho
   - **Dev stack**：起 `docker compose`，檢查 API `/health`，並 enqueue 一個 Celery 任務確認 worker 有處理。
   - **Prod stack**：起 `docker compose -f docker-compose.prod.yml`，檢查 Nginx 前端可回應、`/api/*` 代理正常，並 enqueue 任務確認 worker 有處理。
 
+### 團隊協作流程（建議）
+
+- **PR 模板**：`.github/PULL_REQUEST_TEMPLATE.md`（請填寫變更摘要與驗證方式）
+- **CODEOWNERS**：`.github/CODEOWNERS`（可指定路徑的預設審核者；請把 `@YOUR_OWNER` 改成你們實際的 owner/team）
+
 
