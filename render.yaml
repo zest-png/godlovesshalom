@@ -14,7 +14,7 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: REDIS_URL
-        sync: false
+        value: ""
       # Render 的 Persistent Disk 建議掛在 /data
       - key: DATABASE_URL
         value: sqlite:////data/app.db
@@ -37,7 +37,7 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: REDIS_URL
-        sync: false
+        value: ""
       # Worker 目前不需要讀寫 SQLite，但保留這個變數避免程式引用時出錯
       - key: DATABASE_URL
         value: sqlite:////data/app.db
