@@ -3,8 +3,6 @@ services:
   - type: redis
     name: phone-redis
     plan: free
-    ipAllowList:
-      - 0.0.0.0/0
 
   # FastAPI（主要 API）
   - type: web
