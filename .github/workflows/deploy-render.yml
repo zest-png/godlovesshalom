@@ -1,0 +1,71 @@
+name: Deploy (Render)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  deploy:
+    name: Trigger Render deploy hooks
+    runs-on: ubuntu-latest
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      }}
+    steps:
+      - name: Trigger deploy hooks
+        env:
+          RENDER_DEPLOY_HOOK_API: ${{ secrets.RENDER_DEPLOY_HOOK_API }}
+          RENDER_DEPLOY_HOOK_WORKER: ${{ secrets.RENDER_DEPLOY_HOOK_WORKER }}
+          RENDER_DEPLOY_HOOK_WEB: ${{ secrets.RENDER_DEPLOY_HOOK_WEB }}
+        run: |
+          set -euo pipefail
+
+          trigger () {
+            local name="$1"
+            local url="$2"
+            if [ -z "${url}" ]; then
+              echo "Missing deploy hook for ${name}; skip."
+              return 0
+            fi
+            echo "Triggering ${name}..."
+            curl -fsS -X POST "${url}" >/dev/null
+          }
+
+          trigger "api" "${RENDER_DEPLOY_HOOK_API}"
+          trigger "worker" "${RENDER_DEPLOY_HOOK_WORKER}"
+          trigger "web" "${RENDER_DEPLOY_HOOK_WEB}"
+
+name: Deploy to Render (after CI)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy hook (API)
+        if: ${{ secrets.RENDER_DEPLOY_HOOK_API != '' }}
+        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_API }}"
+
+      - name: Trigger Render deploy hook (Worker)
+        if: ${{ secrets.RENDER_DEPLOY_HOOK_WORKER != '' }}
+        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_WORKER }}"
+
+      - name: Trigger Render deploy hook (Web / Static Site)
+        if: ${{ secrets.RENDER_DEPLOY_HOOK_WEB != '' }}
+        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_WEB }}"
+
+

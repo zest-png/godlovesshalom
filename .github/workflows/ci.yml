@@ -2,6 +2,125 @@ name: CI
 
 on:
   push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  compose-dev:
+    name: Docker Compose (dev)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start dev stack
+        run: docker compose up -d --build
+
+      - name: Wait for API health
+        run: |
+          set -euo pipefail
+          for i in {1..60}; do
+            if curl -fsS http://localhost:8000/health >/dev/null; then
+              echo "API healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not become healthy in time"
+          docker compose logs --no-color --tail=200
+          exit 1
+
+      - name: Enqueue Celery echo task
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST http://localhost:8000/tasks/echo \
+            -H "content-type: application/json" \
+            -d '{"message":"ci-dev"}' >/dev/null
+
+      - name: Verify worker processed task
+        run: |
+          set -euo pipefail
+          for i in {1..60}; do
+            if docker compose logs --no-color --tail=200 python-worker | grep -q "echo task received"; then
+              echo "Worker processed task"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Worker did not process task in time"
+          docker compose logs --no-color --tail=200 python-worker
+          exit 1
+
+      - name: Shutdown
+        if: always()
+        run: docker compose down -v
+
+  compose-prod:
+    name: Docker Compose (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start prod stack
+        run: docker compose -f docker-compose.prod.yml up -d --build
+
+      - name: Wait for web
+        run: |
+          set -euo pipefail
+          for i in {1..60}; do
+            if curl -fsS http://localhost:3000/ >/dev/null; then
+              echo "Web responding"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Web did not become ready in time"
+          docker compose -f docker-compose.prod.yml logs --no-color --tail=200
+          exit 1
+
+      - name: Verify API proxy
+        run: |
+          set -euo pipefail
+          curl -fsS http://localhost:3000/api/health >/dev/null
+
+      - name: Enqueue Celery echo task (via proxied API)
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST http://localhost:3000/api/tasks/echo \
+            -H "content-type: application/json" \
+            -d '{"message":"ci-prod"}' >/dev/null
+
+      - name: Verify worker processed task
+        run: |
+          set -euo pipefail
+          for i in {1..60}; do
+            if docker compose -f docker-compose.prod.yml logs --no-color --tail=200 python-worker | grep -q "echo task received"; then
+              echo "Worker processed task"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Worker did not process task in time"
+          docker compose -f docker-compose.prod.yml logs --no-color --tail=200 python-worker
+          exit 1
+
+      - name: Shutdown
+        if: always()
+        run: docker compose -f docker-compose.prod.yml down -v
+
+name: CI
+
+on:
+  push:
   pull_request:
 
 jobs:

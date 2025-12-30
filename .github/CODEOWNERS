@@ -1,4 +1,10 @@
 # 說明：
+# - 你可以把 @YOUR_OWNER 改成你們的 GitHub 使用者/團隊，例如 @zest 或 @your-org/backend
+# - 之後 PR 只要改到對應路徑，就會自動要求對應的人審核
+
+* @YOUR_OWNER
+
+# 說明：
 # - 這裡的 owner 需要是 GitHub 使用者或 team，例如：
 #   - @your-username
 #   - @your-org/your-team

@@ -1,0 +1,68 @@
+services:
+  # Redis（給 Celery 用）
+  - type: redis
+    name: phone-redis
+    ipAllowList: []
+    plan: free
+
+  # FastAPI（主要 API）
+  - type: web
+    name: phone-api
+    runtime: docker
+    rootDir: py-app
+    plan: starter
+    healthCheckPath: /health
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: REDIS_URL
+        fromService:
+          name: phone-redis
+          type: redis
+          property: connectionString
+      # Render 的 Persistent Disk 建議掛在 /data
+      - key: DATABASE_URL
+        value: sqlite:////data/app.db
+    disk:
+      name: phone-data
+      mountPath: /data
+      sizeGB: 1
+
+  # Celery Worker（背景任務）
+  - type: worker
+    name: phone-worker
+    runtime: docker
+    rootDir: py-app
+    plan: starter
+    envVars:
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: REDIS_URL
+        fromService:
+          name: phone-redis
+          type: redis
+          property: connectionString
+      # Worker 目前不需要讀寫 SQLite，但保留這個變數避免程式引用時出錯
+      - key: DATABASE_URL
+        value: sqlite:////data/app.db
+    startCommand: celery -A app.celery_app:celery_app worker --loglevel=INFO
+
+  # 前端（Static Site）
+  - type: web
+    name: phone-web
+    runtime: static
+    rootDir: node-app
+    plan: free
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      # 重要：Static Site 沒有 /api 反代；請填 phone-api 的公開 URL（例如 https://phone-api.onrender.com）
+      - key: VITE_API_BASE_URL
+        sync: false
+
+

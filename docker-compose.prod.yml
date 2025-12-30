@@ -17,8 +17,11 @@ services:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=sqlite:////app/data/app.db
     ports:
       - "8000:8000"
+    volumes:
+      - ./py-app/data:/app/data
     depends_on:
       - redis
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -30,6 +33,9 @@ services:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=sqlite:////app/data/app.db
+    volumes:
+      - ./py-app/data:/app/data
     depends_on:
       - redis
     command: ["celery", "-A", "app.celery_app:celery_app", "worker", "--loglevel=INFO"]

@@ -9,6 +9,10 @@ yarn-error.log*
 __pycache__/
 *.py[cod]
 
+# Local data (SQLite)
+py-app/data/*.db
+py-app/data/*.db-journal
+
 # OS / tooling
 .DS_Store
 Thumbs.db

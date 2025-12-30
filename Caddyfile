@@ -1,0 +1,23 @@
+{
+  # 若 Let's Encrypt 需要通知信箱，可自行加上：
+  # email you@example.com
+}
+
+# 使用環境變數 APP_DOMAIN：
+# - 有網域：export APP_DOMAIN=your.domain.com
+# - 沒網域、只用 IP 測試：export APP_DOMAIN=":80"
+{$APP_DOMAIN} {
+  encode gzip
+
+  # API
+  handle_path /api/* {
+    reverse_proxy python-api:8000
+  }
+
+  # Frontend (Nginx)
+  handle {
+    reverse_proxy web:80
+  }
+}
+
+
