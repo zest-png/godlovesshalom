@@ -16,7 +16,7 @@ export default function App() {
   const [shiftTypes, setShiftTypes] = useState<ShiftType[]>([]);
   const [assignments, setAssignments] = useState<Map<AssignKey, Assignment>>(new Map());
   const [employeeQuery, setEmployeeQuery] = useState<string>("");
-  const [showInactiveEmployees, setShowInactiveEmployees] = useState<boolean>(false);
+  const [showInactiveInTable, setShowInactiveInTable] = useState<boolean>(false);
 
   const [newEmployeeName, setNewEmployeeName] = useState("");
   const [newEmployeeMaxDays, setNewEmployeeMaxDays] = useState<number>(20);
@@ -72,14 +72,30 @@ export default function App() {
     return [...shiftTypes].sort((a, b) => (order.get(a.code) ?? 999) - (order.get(b.code) ?? 999));
   }, [shiftTypes]);
 
-  const visibleEmployees = useMemo(() => {
+  // 設定區：平常隱藏停用員工，但保留可展開的停用清單（方便重新啟用與調整限制）。
+  const employeesForSettingsActive = useMemo(() => {
     const q = employeeQuery.trim().toLowerCase();
     return employees.filter((e) => {
-      if (!showInactiveEmployees && !e.active) return false;
+      if (!e.active) return false;
       if (!q) return true;
       return e.name.toLowerCase().includes(q);
     });
-  }, [employees, employeeQuery, showInactiveEmployees]);
+  }, [employees, employeeQuery]);
+
+  const employeesForSettingsInactive = useMemo(() => {
+    const q = employeeQuery.trim().toLowerCase();
+    return employees.filter((e) => {
+      if (e.active) return false;
+      if (!q) return true;
+      return e.name.toLowerCase().includes(q);
+    });
+  }, [employees, employeeQuery]);
+
+  // 班表：預設只顯示啟用員工（避免表格太擁擠），可選擇顯示停用。
+  const employeesForTable = useMemo(() => {
+    if (showInactiveInTable) return employees;
+    return employees.filter((e) => e.active);
+  }, [employees, showInactiveInTable]);
 
   const holidayDateSet = useMemo(() => {
     return new Set(
@@ -481,8 +497,8 @@ export default function App() {
                     placeholder="搜尋員工（姓名）"
                   />
                   <label className="inline muted" style={{ fontSize: 12 }}>
-                    <input checked={showInactiveEmployees} onChange={(e) => setShowInactiveEmployees(e.target.checked)} type="checkbox" />
-                    顯示停用
+                    <input checked={showInactiveInTable} onChange={(e) => setShowInactiveInTable(e.target.checked)} type="checkbox" />
+                    班表顯示停用
                   </label>
                 </div>
 
@@ -609,10 +625,13 @@ export default function App() {
                 <details open className="employeeCard">
                   <summary className="employeeSummary">
                     <div style={{ fontWeight: 900 }}>員工設定</div>
-                    <span className="badge">{visibleEmployees.length} 人</span>
+                    <span className="badge">
+                      啟用 {employeesForSettingsActive.length}
+                      {employeesForSettingsInactive.length ? ` / 停用 ${employeesForSettingsInactive.length}` : ""}
+                    </span>
                   </summary>
                   <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                    {visibleEmployees.map((e) => {
+                    {employeesForSettingsActive.map((e) => {
                       const ed = employeeEdits.get(e.id);
                       if (!ed) return null;
                       return (
@@ -757,6 +776,175 @@ export default function App() {
                         </details>
                       );
                     })}
+
+                    {employeesForSettingsInactive.length ? (
+                      <details className="employeeCard" open={employeeQuery.trim().length > 0}>
+                        <summary className="employeeSummary">
+                          <div style={{ fontWeight: 900 }}>停用員工</div>
+                          <span className="badge">{employeesForSettingsInactive.length} 人</span>
+                        </summary>
+                        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                          {employeesForSettingsInactive.map((e) => {
+                            const ed = employeeEdits.get(e.id);
+                            if (!ed) return null;
+                            return (
+                              <details key={`edit-${e.id}`} className="employeeCard">
+                                <summary className="employeeSummary">
+                                  <div>
+                                    <div className="inline" style={{ gap: 8 }}>
+                                      <div
+                                        title={e.color ?? ""}
+                                        style={{ width: 10, height: 10, borderRadius: 999, background: e.color ?? "#94a3b8" }}
+                                      />
+                                      <span style={{ fontWeight: 900 }}>{e.name}</span>
+                                    </div>
+                                    <div className="employeeMeta">{e.active ? "啟用" : "停用"}</div>
+                                  </div>
+                                  <span className={`badge ${e.active ? "badgeGreen" : "badgeRed"}`}>{e.active ? "ON" : "OFF"}</span>
+                                </summary>
+
+                                <div style={{ marginTop: 10 }} className="controlGroup">
+                                  <div className="inlineWrap">
+                                    <label className="inline muted" style={{ fontSize: 12 }}>
+                                      <input checked={e.active} onChange={(ev) => toggleActive(e, ev.target.checked)} type="checkbox" />
+                                      啟用
+                                    </label>
+                                    <button
+                                      className={`btn ${ed.dirty ? "btnPrimary" : ""}`}
+                                      type="button"
+                                      disabled={!ed.dirty || loading}
+                                      onClick={() => {
+                                        setError(null);
+                                        setEmployeeEdits((prev) => {
+                                          const cur = prev.get(e.id);
+                                          if (!cur) return prev;
+                                          const next = new Map(prev);
+                                          next.set(e.id, { ...cur, dirty: false });
+                                          return next;
+                                        });
+                                        api
+                                          .patchEmployee(e.id, {
+                                            max_work_days_per_month: Math.max(0, Number(ed.max_work_days_per_month) || 0),
+                                            max_consecutive_work_days: Math.max(0, Number(ed.max_consecutive_work_days) || 0),
+                                            can_work_night: ed.night_only ? true : ed.can_work_night,
+                                            night_only: ed.night_only,
+                                            special_requirements: ed.special_requirements.trim() || null,
+                                          })
+                                          .then(() => reloadAll(month))
+                                          .catch((err) => setError(String(err)));
+                                      }}
+                                    >
+                                      儲存變更
+                                    </button>
+                                  </div>
+
+                                  <div className="kpiGrid">
+                                    <label className="fieldLabel">
+                                      可上班天數（當月上限）
+                                      <input
+                                        className="input"
+                                        type="number"
+                                        min={0}
+                                        value={String(ed.max_work_days_per_month)}
+                                        onChange={(ev) => {
+                                          const v = Number(ev.target.value);
+                                          setEmployeeEdits((prev) => {
+                                            const next = new Map(prev);
+                                            next.set(e.id, {
+                                              ...ed,
+                                              max_work_days_per_month: Number.isFinite(v) ? v : 0,
+                                              dirty: true,
+                                            });
+                                            return next;
+                                          });
+                                        }}
+                                      />
+                                    </label>
+                                    <label className="fieldLabel">
+                                      最多連上（天）
+                                      <input
+                                        className="input"
+                                        type="number"
+                                        min={0}
+                                        value={String(ed.max_consecutive_work_days)}
+                                        onChange={(ev) => {
+                                          const v = Number(ev.target.value);
+                                          setEmployeeEdits((prev) => {
+                                            const next = new Map(prev);
+                                            next.set(e.id, {
+                                              ...ed,
+                                              max_consecutive_work_days: Number.isFinite(v) ? v : 0,
+                                              dirty: true,
+                                            });
+                                            return next;
+                                          });
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+
+                                  <div className="inlineWrap">
+                                    <label className="inline muted" style={{ fontSize: 12 }}>
+                                      <input
+                                        checked={ed.can_work_night}
+                                        onChange={(ev) => {
+                                          const v = ev.target.checked;
+                                          setEmployeeEdits((prev) => {
+                                            const next = new Map(prev);
+                                            next.set(e.id, { ...ed, can_work_night: v, dirty: true });
+                                            return next;
+                                          });
+                                        }}
+                                        type="checkbox"
+                                        disabled={ed.night_only}
+                                      />
+                                      可排夜班（夜）
+                                    </label>
+                                    <label className="inline muted" style={{ fontSize: 12 }}>
+                                      <input
+                                        checked={ed.night_only}
+                                        onChange={(ev) => {
+                                          const v = ev.target.checked;
+                                          setEmployeeEdits((prev) => {
+                                            const next = new Map(prev);
+                                            next.set(e.id, {
+                                              ...ed,
+                                              night_only: v,
+                                              can_work_night: v ? true : ed.can_work_night,
+                                              dirty: true,
+                                            });
+                                            return next;
+                                          });
+                                        }}
+                                        type="checkbox"
+                                      />
+                                      只排夜班（不排早/晚）
+                                    </label>
+                                  </div>
+
+                                  <label className="fieldLabel">
+                                    特殊需求（文字）
+                                    <textarea
+                                      className="textarea"
+                                      rows={2}
+                                      value={ed.special_requirements}
+                                      onChange={(ev) => {
+                                        const v = ev.target.value;
+                                        setEmployeeEdits((prev) => {
+                                          const next = new Map(prev);
+                                          next.set(e.id, { ...ed, special_requirements: v, dirty: true });
+                                          return next;
+                                        });
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                              </details>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    ) : null}
                   </div>
                 </details>
 
@@ -783,7 +971,7 @@ export default function App() {
             <div className="cardHeader">
               <h2 className="cardTitle">班表</h2>
               <span className="badge">
-                顯示 {visibleEmployees.length} 人 × {days} 天
+                顯示 {employeesForTable.length} 人 × {days} 天
               </span>
             </div>
             <div className="tableWrap">
@@ -805,7 +993,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleEmployees.map((e) => (
+                  {employeesForTable.map((e) => (
                     <tr key={e.id} className="tr">
                       <td className="td tdSticky">
                         <div className="employeeName">{e.name}</div>
