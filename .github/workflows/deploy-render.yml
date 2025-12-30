@@ -12,7 +12,12 @@ jobs:
     if: >-
       ${{
         github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'main'
+        github.event.workflow_run.head_branch == 'main' &&
+        (
+          secrets.RENDER_DEPLOY_HOOK_API != '' ||
+          secrets.RENDER_DEPLOY_HOOK_WORKER != '' ||
+          secrets.RENDER_DEPLOY_HOOK_WEB != ''
+        )
       }}
     steps:
       - name: Trigger deploy hooks
