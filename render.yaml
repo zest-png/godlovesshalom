@@ -55,9 +55,11 @@ services:
         value: sqlite:////data/app.db
 
   # 前端（Static Site）
-  - type: static
+  - type: web
     name: phone-web
+    runtime: static
     rootDir: node-app
+    plan: starter
     buildCommand: npm ci && npm run build
     envVars:
       # 重要：Static Site 沒有 /api 反代；請填 phone-api 的公開 URL（例如 https://phone-api.onrender.com）
