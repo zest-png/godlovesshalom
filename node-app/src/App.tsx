@@ -1008,6 +1008,16 @@ export default function App() {
                         const h = isHoliday(dayStr);
                         return (
                           <td key={k} className={`td ${h ? "isHoliday" : ""}`}>
+                            {a?.shift_code && (
+                              <div style={{ 
+                                fontSize: "13px", 
+                                fontWeight: 600, 
+                                marginBottom: "4px",
+                                color: "var(--text)"
+                              }}>
+                                {a.shift_code}
+                              </div>
+                            )}
                             <select
                               value={a?.shift_type_id ?? ""}
                               onChange={(ev) => {
@@ -1018,7 +1028,7 @@ export default function App() {
                               className={`cellSelect ${saving ? "cellSelectSaving" : ""}`}
                               aria-label={`${e.name} ${dayStr} 班別`}
                             >
-                              <option value="">（空）</option>
+                              <option value="">{a?.shift_code ? "更改" : "（空）"}</option>
                               {shiftOptions.map((s) => (
                                 <option key={s.id} value={s.id}>
                                   {s.code}
