@@ -2,7 +2,6 @@ services:
   # Redis（給 Celery 用）
   - type: redis
     name: phone-redis
-    ipAllowList: []
     plan: free
 
   # FastAPI（主要 API）
