@@ -59,7 +59,6 @@ services:
     rootDir: node-app
     plan: free
     buildCommand: npm ci && npm run build
-    publishPath: dist
     envVars:
       # 重要：Static Site 沒有 /api 反代；請填 phone-api 的公開 URL（例如 https://phone-api.onrender.com）
       - key: VITE_API_BASE_URL
