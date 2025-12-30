@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type Assignment, type Employee, type ShiftType } from "./api";
 import { daysInMonth, defaultMonthStr, toDateStr, weekdayLabel } from "./dateUtils";
 import * as XLSX from "xlsx";
@@ -15,6 +15,8 @@ export default function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [shiftTypes, setShiftTypes] = useState<ShiftType[]>([]);
   const [assignments, setAssignments] = useState<Map<AssignKey, Assignment>>(new Map());
+  const [employeeQuery, setEmployeeQuery] = useState<string>("");
+  const [showInactiveEmployees, setShowInactiveEmployees] = useState<boolean>(false);
 
   const [newEmployeeName, setNewEmployeeName] = useState("");
   const [newEmployeeMaxDays, setNewEmployeeMaxDays] = useState<number>(20);
@@ -69,6 +71,31 @@ export default function App() {
     ]);
     return [...shiftTypes].sort((a, b) => (order.get(a.code) ?? 999) - (order.get(b.code) ?? 999));
   }, [shiftTypes]);
+
+  const visibleEmployees = useMemo(() => {
+    const q = employeeQuery.trim().toLowerCase();
+    return employees.filter((e) => {
+      if (!showInactiveEmployees && !e.active) return false;
+      if (!q) return true;
+      return e.name.toLowerCase().includes(q);
+    });
+  }, [employees, employeeQuery, showInactiveEmployees]);
+
+  const holidayDateSet = useMemo(() => {
+    return new Set(
+      holidayDatesText
+        .split(/[\s,]+/g)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+  }, [holidayDatesText]);
+
+  function isHoliday(dayStr: string): boolean {
+    if (holidayDateSet.has(dayStr)) return true;
+    if (!weekendAsHoliday) return false;
+    const d = new Date(`${dayStr}T00:00:00`);
+    return d.getDay() === 0 || d.getDay() === 6;
+  }
 
   async function reloadAll(targetMonth = month) {
     setLoading(true);
@@ -314,20 +341,6 @@ export default function App() {
   const activeEmployees = useMemo(() => employees.filter((e) => e.active).length, [employees]);
 
   const monthDemand = useMemo(() => {
-    const holidayDates = new Set(
-      holidayDatesText
-        .split(/[\s,]+/g)
-        .map((s) => s.trim())
-        .filter(Boolean),
-    );
-
-    function isHoliday(dayStr: string): boolean {
-      if (holidayDates.has(dayStr)) return true;
-      if (!weekendAsHoliday) return false;
-      const d = new Date(`${dayStr}T00:00:00`);
-      return d.getDay() === 0 || d.getDay() === 6;
-    }
-
     let weekdayCount = 0;
     let holidayCount = 0;
     let totalM = 0;
@@ -358,7 +371,6 @@ export default function App() {
   }, [
     days,
     estimateWorkDaysPerPerson,
-    holidayDatesText,
     holidayEvening,
     holidayMorning,
     holidayNight,
@@ -367,505 +379,475 @@ export default function App() {
     weekdayMorning,
     weekdayNight,
     weekendAsHoliday,
+    holidayDateSet,
   ]);
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", padding: 20 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22 }}>飯店櫃台排班（MVP）</h1>
-          <div style={{ color: "#555", marginTop: 4 }}>
-            月份排班表：列=員工、欄=日期（可手動改班）；自動排班會遵守「可上班天數 / 夜班限制 / 連上限制 / 每 7 日至少休 N 日」
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span>月份</span>
-            <input value={month} onChange={(e) => setMonth(e.target.value)} type="month" />
-          </label>
-          <button onClick={() => reloadAll(month).catch(() => undefined)} type="button" disabled={loading}>
-            重新載入
-          </button>
-          <button onClick={() => autoGenerate().catch(() => undefined)} type="button" disabled={loading}>
-            自動排班（依規則）
-          </button>
-          <button onClick={() => fillOff().catch(() => undefined)} type="button" disabled={loading}>
-            補滿休假（O）
-          </button>
-          <button onClick={exportExcel} type="button" disabled={loading}>
-            匯出 Excel
-          </button>
-        </div>
-      </div>
-
-      {error ? (
-        <pre style={{ background: "#fee", padding: 12, marginTop: 12, whiteSpace: "pre-wrap" }}>{error}</pre>
-      ) : null}
-
-      {warnings.length ? (
-        <div style={{ background: "#fff7ed", border: "1px solid #fdba74", padding: 12, marginTop: 12 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>自動排班提醒</div>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 16, marginTop: 16 }}>
-        <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 16 }}>員工</h2>
-            <span style={{ color: "#666" }}>{employees.length} 人</span>
+    <div className="app">
+      <div className="container">
+        <div className="header">
+          <div>
+            <h1 className="title">飯店櫃台排班（MVP）</h1>
+            <div className="subtitle">
+              列=員工、欄=日期（可手動改班）；自動排班會遵守「可上班天數 / 夜班限制 / 連上限制 / 每 7 日至少休 N 日」
+              {loading ? "（載入中…）" : ""}
+            </div>
           </div>
 
-          <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                value={newEmployeeName}
-                onChange={(e) => setNewEmployeeName(e.target.value)}
-                placeholder="新增員工姓名"
-                style={{ flex: 1 }}
-              />
-              <button onClick={() => createEmployee().catch(() => undefined)} type="button">
-                新增
-              </button>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                可上班天數（當月上限）
-                <input
-                  value={String(newEmployeeMaxDays)}
-                  onChange={(e) => setNewEmployeeMaxDays(Number(e.target.value))}
-                  type="number"
-                  min={0}
-                />
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#444" }}>
-                <input
-                  checked={newEmployeeCanNight}
-                  onChange={(e) => setNewEmployeeCanNight(e.target.checked)}
-                  type="checkbox"
-                  disabled={newEmployeeNightOnly}
-                />
-                可排夜班（夜）
-              </label>
-            </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#444" }}>
-              <input
-                checked={newEmployeeNightOnly}
-                onChange={(e) => {
-                  const v = e.target.checked;
-                  setNewEmployeeNightOnly(v);
-                  if (v) setNewEmployeeCanNight(true);
-                }}
-                type="checkbox"
-              />
-              只排夜班（不排早/晚）
+          <div className="toolbar">
+            <label className="inline">
+              <span className="muted">月份</span>
+              <input className="input" value={month} onChange={(e) => setMonth(e.target.value)} type="month" />
             </label>
-            <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-              特殊需求（文字）
-              <textarea
-                value={newEmployeeSpecial}
-                onChange={(e) => setNewEmployeeSpecial(e.target.value)}
-                placeholder="例如：每週三固定不能上班、不可連上 6 天、只想排早班…（文字備註）"
-                rows={2}
-              />
-            </label>
+            <button className="btn" onClick={() => reloadAll(month).catch(() => undefined)} type="button" disabled={loading}>
+              重新載入
+            </button>
+            <button className="btn btnPrimary" onClick={() => autoGenerate().catch(() => undefined)} type="button" disabled={loading}>
+              自動排班
+            </button>
+            <button className="btn btnGhost" onClick={() => fillOff().catch(() => undefined)} type="button" disabled={loading}>
+              補滿休假（O）
+            </button>
+            <button className="btn" onClick={exportExcel} type="button" disabled={loading}>
+              匯出 Excel
+            </button>
           </div>
+        </div>
 
-          <div style={{ marginTop: 12, borderTop: "1px dashed #e5e7eb", paddingTop: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 14 }}>自動排班參數（可調）</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
-              <div style={{ gridColumn: "1 / -1", fontSize: 12, color: "#374151", fontWeight: 800 }}>平日需求</div>
-              <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                早班（早）
-                <input value={String(weekdayMorning)} onChange={(e) => setWeekdayMorning(Number(e.target.value))} type="number" min={0} />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                晚班（晚）
-                <input value={String(weekdayEvening)} onChange={(e) => setWeekdayEvening(Number(e.target.value))} type="number" min={0} />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                夜班（夜）
-                <input value={String(weekdayNight)} onChange={(e) => setWeekdayNight(Number(e.target.value))} type="number" min={0} />
-              </label>
+        {error ? (
+          <div className="alert alertError">
+            <div style={{ fontWeight: 900, marginBottom: 6 }}>發生錯誤</div>
+            <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{error}</pre>
+          </div>
+        ) : null}
 
-              <div style={{ gridColumn: "1 / -1", fontSize: 12, color: "#374151", fontWeight: 800, marginTop: 6 }}>假日需求</div>
-              <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                早班（早）
-                <input value={String(holidayMorning)} onChange={(e) => setHolidayMorning(Number(e.target.value))} type="number" min={0} />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                晚班（晚）
-                <input value={String(holidayEvening)} onChange={(e) => setHolidayEvening(Number(e.target.value))} type="number" min={0} />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                夜班（夜）
-                <input value={String(holidayNight)} onChange={(e) => setHolidayNight(Number(e.target.value))} type="number" min={0} />
-              </label>
+        {warnings.length ? (
+          <div className="alert alertWarn">
+            <div style={{ fontWeight: 900, marginBottom: 6 }}>自動排班提醒</div>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="row">
+          <div className="card">
+            <div className="cardHeader">
+              <h2 className="cardTitle">設定</h2>
+              <span className="badge">
+                {employees.length} 人（啟用 {activeEmployees}）
+              </span>
             </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12, color: "#444" }}>
-              <input checked={weekendAsHoliday} onChange={(e) => setWeekendAsHoliday(e.target.checked)} type="checkbox" />
-              週末視為假日（六日）
-            </label>
-            <label style={{ display: "grid", gap: 4, marginTop: 8, fontSize: 12, color: "#444" }}>
-              額外假日日期（YYYY-MM-DD，用空白/逗號/換行分隔）
-              <textarea
-                rows={2}
-                value={holidayDatesText}
-                onChange={(e) => setHolidayDatesText(e.target.value)}
-                placeholder="例如：2026-01-01 2026-02-28"
-              />
-            </label>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button type="button" onClick={loadTaiwanHolidays2026} disabled={loading}>
-                載入 2026 國定假日（合併）
-              </button>
-              <button type="button" onClick={() => setHolidayDatesText("")} disabled={loading}>
-                清空
-              </button>
-            </div>
-
-            <div style={{ marginTop: 10, padding: 10, border: "1px solid #e5e7eb", borderRadius: 8 }}>
-              <div style={{ fontSize: 12, color: "#111827", fontWeight: 800 }}>當月人力需求估算（以每人工作 20 天估算）</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                  每人可工作（天）
+            <div className="cardBody">
+              <div className="controlGroup">
+                <div className="inlineWrap">
                   <input
-                    value={String(estimateWorkDaysPerPerson)}
-                    onChange={(e) => setEstimateWorkDaysPerPerson(Number(e.target.value))}
-                    type="number"
-                    min={1}
+                    className="input"
+                    value={newEmployeeName}
+                    onChange={(e) => setNewEmployeeName(e.target.value)}
+                    placeholder="新增員工姓名"
                   />
-                </label>
-                <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.6 }}>
-                  <div>
-                    平日 {monthDemand.weekdayCount} 天、假日 {monthDemand.holidayCount} 天
+                  <button className="btn btnPrimary" onClick={() => createEmployee().catch(() => undefined)} type="button">
+                    新增
+                  </button>
+                </div>
+
+                <div className="kpiGrid">
+                  <div className="kpi">
+                    <div className="kpiTitle">預估需要人力（本月）</div>
+                    <div className="kpiValue">{monthDemand.estimatedHeadcount} 人</div>
+                    <div className="muted" style={{ fontSize: 12, lineHeight: 1.5, marginTop: 6 }}>
+                      需求工日 {monthDemand.totalWorkDays}（早 {monthDemand.totalM} / 晚 {monthDemand.totalE} / 夜 {monthDemand.totalN}）
+                    </div>
                   </div>
-                  <div>
-                    需求工日：{monthDemand.totalWorkDays}（早 {monthDemand.totalM} / 晚 {monthDemand.totalE} / 夜 {monthDemand.totalN}）
+                  <div className="kpi">
+                    <div className="kpiTitle">目前啟用人力</div>
+                    <div className="kpiValue">{activeEmployees} 人</div>
+                    <div className="muted" style={{ fontSize: 12, lineHeight: 1.5, marginTop: 6 }}>
+                      平日 {monthDemand.weekdayCount} 天、假日 {monthDemand.holidayCount} 天
+                    </div>
                   </div>
-                  <div style={{ fontWeight: 800, color: activeEmployees < monthDemand.estimatedHeadcount ? "#b91c1c" : "#065f46" }}>
-                    估算需要人力：{monthDemand.estimatedHeadcount} 人（目前啟用 {activeEmployees} 人）
+                </div>
+
+                <div className="divider" />
+
+                <div className="inlineWrap">
+                  <input
+                    className="input"
+                    value={employeeQuery}
+                    onChange={(e) => setEmployeeQuery(e.target.value)}
+                    placeholder="搜尋員工（姓名）"
+                  />
+                  <label className="inline muted" style={{ fontSize: 12 }}>
+                    <input checked={showInactiveEmployees} onChange={(e) => setShowInactiveEmployees(e.target.checked)} type="checkbox" />
+                    顯示停用
+                  </label>
+                </div>
+
+                <details open className="employeeCard">
+                  <summary className="employeeSummary">
+                    <div style={{ fontWeight: 900 }}>自動排班參數</div>
+                    <span className="badge">可調</span>
+                  </summary>
+                  <div style={{ marginTop: 10 }} className="controlGroup">
+                    <div className="kpiGrid">
+                      <label className="fieldLabel">
+                        平日 早
+                        <input className="input" value={String(weekdayMorning)} onChange={(e) => setWeekdayMorning(Number(e.target.value))} type="number" min={0} />
+                      </label>
+                      <label className="fieldLabel">
+                        平日 晚
+                        <input className="input" value={String(weekdayEvening)} onChange={(e) => setWeekdayEvening(Number(e.target.value))} type="number" min={0} />
+                      </label>
+                      <label className="fieldLabel">
+                        平日 夜
+                        <input className="input" value={String(weekdayNight)} onChange={(e) => setWeekdayNight(Number(e.target.value))} type="number" min={0} />
+                      </label>
+                      <label className="fieldLabel">
+                        假日 早
+                        <input className="input" value={String(holidayMorning)} onChange={(e) => setHolidayMorning(Number(e.target.value))} type="number" min={0} />
+                      </label>
+                      <label className="fieldLabel">
+                        假日 晚
+                        <input className="input" value={String(holidayEvening)} onChange={(e) => setHolidayEvening(Number(e.target.value))} type="number" min={0} />
+                      </label>
+                      <label className="fieldLabel">
+                        假日 夜
+                        <input className="input" value={String(holidayNight)} onChange={(e) => setHolidayNight(Number(e.target.value))} type="number" min={0} />
+                      </label>
+                    </div>
+
+                    <div className="inlineWrap">
+                      <label className="inline muted" style={{ fontSize: 12 }}>
+                        <input checked={weekendAsHoliday} onChange={(e) => setWeekendAsHoliday(e.target.checked)} type="checkbox" />
+                        週末視為假日（六日）
+                      </label>
+                      <label className="fieldLabel" style={{ minWidth: 180 }}>
+                        每人可工作（天）
+                        <input
+                          className="input"
+                          value={String(estimateWorkDaysPerPerson)}
+                          onChange={(e) => setEstimateWorkDaysPerPerson(Number(e.target.value))}
+                          type="number"
+                          min={1}
+                        />
+                      </label>
+                    </div>
+
+                    <label className="fieldLabel">
+                      額外假日日期（YYYY-MM-DD；空白/逗號/換行分隔）
+                      <textarea
+                        className="textarea"
+                        rows={2}
+                        value={holidayDatesText}
+                        onChange={(e) => setHolidayDatesText(e.target.value)}
+                        placeholder="例如：2026-01-01 2026-02-28"
+                      />
+                    </label>
+
+                    <div className="inlineWrap">
+                      <button className="btn" type="button" onClick={loadTaiwanHolidays2026} disabled={loading}>
+                        載入 2026 國定假日（合併）
+                      </button>
+                      <button className="btn btnGhost" type="button" onClick={() => setHolidayDatesText("")} disabled={loading}>
+                        清空
+                      </button>
+                    </div>
+
+                    <div className="kpiGrid">
+                      <label className="fieldLabel">
+                        每 7 日至少休（天）
+                        <input
+                          className="input"
+                          value={String(minRestDaysPer7)}
+                          onChange={(e) => setMinRestDaysPer7(Number(e.target.value))}
+                          type="number"
+                          min={0}
+                          max={7}
+                        />
+                      </label>
+                      <label className="fieldLabel">
+                        最多連上（天）
+                        <input
+                          className="input"
+                          value={String(maxConsecutiveWorkDays)}
+                          onChange={(e) => setMaxConsecutiveWorkDays(Number(e.target.value))}
+                          type="number"
+                          min={0}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="inlineWrap">
+                      <label className="inline muted" style={{ fontSize: 12 }}>
+                        <input checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} type="checkbox" />
+                        覆蓋該月現有排班
+                      </label>
+                      <label className="inline muted" style={{ fontSize: 12 }}>
+                        <input checked={preferClusteredWork} onChange={(e) => setPreferClusteredWork(e.target.checked)} type="checkbox" />
+                        上班盡量集中
+                      </label>
+                      <label className="inline muted" style={{ fontSize: 12 }}>
+                        <input checked={preferSameShiftWithinBlock} onChange={(e) => setPreferSameShiftWithinBlock(e.target.checked)} type="checkbox" />
+                        連上盡量同班別
+                      </label>
+                      <label className="inline muted" style={{ fontSize: 12 }}>
+                        <input
+                          checked={trimOverstaffToOff}
+                          onChange={(e) => setTrimOverstaffToOff(e.target.checked)}
+                          type="checkbox"
+                          disabled={overwrite}
+                        />
+                        超過人力自動改排休假（O）
+                      </label>
+                    </div>
+                  </div>
+                </details>
+
+                <details open className="employeeCard">
+                  <summary className="employeeSummary">
+                    <div style={{ fontWeight: 900 }}>員工設定</div>
+                    <span className="badge">{visibleEmployees.length} 人</span>
+                  </summary>
+                  <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                    {visibleEmployees.map((e) => {
+                      const ed = employeeEdits.get(e.id);
+                      if (!ed) return null;
+                      return (
+                        <details key={`edit-${e.id}`} className="employeeCard">
+                          <summary className="employeeSummary">
+                            <div>
+                              <div className="inline" style={{ gap: 8 }}>
+                                <div
+                                  title={e.color ?? ""}
+                                  style={{ width: 10, height: 10, borderRadius: 999, background: e.color ?? "#94a3b8" }}
+                                />
+                                <span style={{ fontWeight: 900 }}>{e.name}</span>
+                              </div>
+                              <div className="employeeMeta">{e.active ? "啟用" : "停用"}</div>
+                            </div>
+                            <span className={`badge ${e.active ? "badgeGreen" : "badgeRed"}`}>{e.active ? "ON" : "OFF"}</span>
+                          </summary>
+
+                          <div style={{ marginTop: 10 }} className="controlGroup">
+                            <div className="inlineWrap">
+                              <label className="inline muted" style={{ fontSize: 12 }}>
+                                <input checked={e.active} onChange={(ev) => toggleActive(e, ev.target.checked)} type="checkbox" />
+                                啟用
+                              </label>
+                              <button
+                                className={`btn ${ed.dirty ? "btnPrimary" : ""}`}
+                                type="button"
+                                disabled={!ed.dirty || loading}
+                                onClick={() => {
+                                  setError(null);
+                                  setEmployeeEdits((prev) => {
+                                    const cur = prev.get(e.id);
+                                    if (!cur) return prev;
+                                    const next = new Map(prev);
+                                    next.set(e.id, { ...cur, dirty: false });
+                                    return next;
+                                  });
+                                  api
+                                    .patchEmployee(e.id, {
+                                      max_work_days_per_month: Math.max(0, Number(ed.max_work_days_per_month) || 0),
+                                      max_consecutive_work_days: Math.max(0, Number(ed.max_consecutive_work_days) || 0),
+                                      can_work_night: ed.night_only ? true : ed.can_work_night,
+                                      night_only: ed.night_only,
+                                      special_requirements: ed.special_requirements.trim() || null,
+                                    })
+                                    .then(() => reloadAll(month))
+                                    .catch((err) => setError(String(err)));
+                                }}
+                              >
+                                儲存變更
+                              </button>
+                            </div>
+
+                            <div className="kpiGrid">
+                              <label className="fieldLabel">
+                                可上班天數（當月上限）
+                                <input
+                                  className="input"
+                                  type="number"
+                                  min={0}
+                                  value={String(ed.max_work_days_per_month)}
+                                  onChange={(ev) => {
+                                    const v = Number(ev.target.value);
+                                    setEmployeeEdits((prev) => {
+                                      const next = new Map(prev);
+                                      next.set(e.id, { ...ed, max_work_days_per_month: Number.isFinite(v) ? v : 0, dirty: true });
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </label>
+                              <label className="fieldLabel">
+                                最多連上（天）
+                                <input
+                                  className="input"
+                                  type="number"
+                                  min={0}
+                                  value={String(ed.max_consecutive_work_days)}
+                                  onChange={(ev) => {
+                                    const v = Number(ev.target.value);
+                                    setEmployeeEdits((prev) => {
+                                      const next = new Map(prev);
+                                      next.set(e.id, { ...ed, max_consecutive_work_days: Number.isFinite(v) ? v : 0, dirty: true });
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </label>
+                            </div>
+
+                            <div className="inlineWrap">
+                              <label className="inline muted" style={{ fontSize: 12 }}>
+                                <input
+                                  checked={ed.can_work_night}
+                                  onChange={(ev) => {
+                                    const v = ev.target.checked;
+                                    setEmployeeEdits((prev) => {
+                                      const next = new Map(prev);
+                                      next.set(e.id, { ...ed, can_work_night: v, dirty: true });
+                                      return next;
+                                    });
+                                  }}
+                                  type="checkbox"
+                                  disabled={ed.night_only}
+                                />
+                                可排夜班（夜）
+                              </label>
+                              <label className="inline muted" style={{ fontSize: 12 }}>
+                                <input
+                                  checked={ed.night_only}
+                                  onChange={(ev) => {
+                                    const v = ev.target.checked;
+                                    setEmployeeEdits((prev) => {
+                                      const next = new Map(prev);
+                                      next.set(e.id, { ...ed, night_only: v, can_work_night: v ? true : ed.can_work_night, dirty: true });
+                                      return next;
+                                    });
+                                  }}
+                                  type="checkbox"
+                                />
+                                只排夜班（不排早/晚）
+                              </label>
+                            </div>
+
+                            <label className="fieldLabel">
+                              特殊需求（文字）
+                              <textarea
+                                className="textarea"
+                                rows={2}
+                                value={ed.special_requirements}
+                                onChange={(ev) => {
+                                  const v = ev.target.value;
+                                  setEmployeeEdits((prev) => {
+                                    const next = new Map(prev);
+                                    next.set(e.id, { ...ed, special_requirements: v, dirty: true });
+                                    return next;
+                                  });
+                                  }}
+                              />
+                            </label>
+                          </div>
+                        </details>
+                      );
+                    })}
+                  </div>
+                </details>
+
+                <div>
+                  <div style={{ fontWeight: 900, marginBottom: 6 }}>班別代碼</div>
+                  <div className="inlineWrap">
+                    {shiftOptions.map((s) => (
+                      <span key={s.id} className="badge">
+                        <b>{s.code}</b>
+                        <span className="muted">=</span>
+                        <span>{s.name}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 8, lineHeight: 1.6 }}>
+                    小提示：夜班（夜）隔天不會自動排早班（早）；如你先把「請假（L）」或手動班別填好，再用「不覆蓋」自動排班，就能保留特殊需求。
                   </div>
                 </div>
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-              <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                每 7 日至少休（天）
-                <input
-                  value={String(minRestDaysPer7)}
-                  onChange={(e) => setMinRestDaysPer7(Number(e.target.value))}
-                  type="number"
-                  min={0}
-                  max={7}
-                />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                最多連上（天）
-                <input
-                  value={String(maxConsecutiveWorkDays)}
-                  onChange={(e) => setMaxConsecutiveWorkDays(Number(e.target.value))}
-                  type="number"
-                  min={0}
-                />
-              </label>
-            </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12, color: "#444" }}>
-              <input checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} type="checkbox" />
-              覆蓋該月現有排班（不勾：會保留你手動選的班/請假，再補齊缺口）
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12, color: "#444" }}>
-              <input checked={preferClusteredWork} onChange={(e) => setPreferClusteredWork(e.target.checked)} type="checkbox" />
-              上班盡量集中（避免上一天休一天）
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12, color: "#444" }}>
-              <input
-                checked={preferSameShiftWithinBlock}
-                onChange={(e) => setPreferSameShiftWithinBlock(e.target.checked)}
-                type="checkbox"
-              />
-              休假與休假之間盡量同班別（同一段連上盡量不換班）
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12, color: "#444" }}>
-              <input
-                checked={trimOverstaffToOff}
-                onChange={(e) => setTrimOverstaffToOff(e.target.checked)}
-                type="checkbox"
-                disabled={overwrite}
-              />
-              超過人力自動改排休假（O）（不覆蓋模式適用）
-            </label>
           </div>
 
-          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-            {employees.map((e) => {
-              const ed = employeeEdits.get(e.id);
-              if (!ed) return null;
-              return (
-                <div
-                  key={`edit-${e.id}`}
-                  style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, opacity: e.active ? 1 : 0.55 }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div
-                        title={e.color ?? ""}
-                        style={{ width: 10, height: 10, borderRadius: 999, background: e.color ?? "#999" }}
-                      />
-                      <div style={{ fontWeight: 800 }}>{e.name}</div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#444", fontSize: 12 }}>
-                        <input checked={e.active} onChange={(ev) => toggleActive(e, ev.target.checked)} type="checkbox" />
-                        啟用
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setError(null);
-                          // 先把 dirty 清掉，避免 reloadAll 又把舊的 dirty 值留著
-                          setEmployeeEdits((prev) => {
-                            const cur = prev.get(e.id);
-                            if (!cur) return prev;
-                            const next = new Map(prev);
-                            next.set(e.id, { ...cur, dirty: false });
-                            return next;
-                          });
-                          api
-                            .patchEmployee(e.id, {
-                              max_work_days_per_month: ed.max_work_days_per_month,
-                              max_consecutive_work_days: ed.max_consecutive_work_days,
-                            can_work_night: ed.night_only ? true : ed.can_work_night,
-                            night_only: ed.night_only,
-                              special_requirements: ed.special_requirements || null,
-                            })
-                            .then(() => reloadAll(month))
-                            .catch((err) => setError(String(err)));
-                        }}
-                        disabled={loading}
-                      >
-                        {ed.dirty ? "儲存*" : "儲存"}
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                    <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                      可上班天數（當月上限）
-                      <input
-                        type="number"
-                        min={0}
-                        value={String(ed.max_work_days_per_month)}
-                        onChange={(ev) => {
-                          const v = Number(ev.target.value);
-                          setEmployeeEdits((prev) => {
-                            const next = new Map(prev);
-                            next.set(e.id, {
-                              ...ed,
-                              max_work_days_per_month: Number.isFinite(v) ? v : 0,
-                              dirty: true,
-                            });
-                            return next;
-                          });
-                        }}
-                      />
-                    </label>
-                    <label style={{ display: "grid", gap: 4, fontSize: 12, color: "#444" }}>
-                      最多連上（天）
-                      <input
-                        type="number"
-                        min={0}
-                        value={String(ed.max_consecutive_work_days)}
-                        onChange={(ev) => {
-                          const v = Number(ev.target.value);
-                          setEmployeeEdits((prev) => {
-                            const next = new Map(prev);
-                            next.set(e.id, {
-                              ...ed,
-                              max_consecutive_work_days: Number.isFinite(v) ? v : 0,
-                              dirty: true,
-                            });
-                            return next;
-                          });
-                        }}
-                      />
-                    </label>
-                  </div>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12, color: "#444" }}>
-                    <input
-                      checked={ed.can_work_night}
-                      onChange={(ev) => {
-                        const v = ev.target.checked;
-                        setEmployeeEdits((prev) => {
-                          const next = new Map(prev);
-                          next.set(e.id, { ...ed, can_work_night: v, dirty: true });
-                          return next;
-                        });
-                      }}
-                      type="checkbox"
-                      disabled={ed.night_only}
-                    />
-                    可排夜班（夜）
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12, color: "#444" }}>
-                    <input
-                      checked={ed.night_only}
-                      onChange={(ev) => {
-                        const v = ev.target.checked;
-                        setEmployeeEdits((prev) => {
-                          const next = new Map(prev);
-                          next.set(e.id, {
-                            ...ed,
-                            night_only: v,
-                            can_work_night: v ? true : ed.can_work_night,
-                            dirty: true,
-                          });
-                          return next;
-                        });
-                      }}
-                      type="checkbox"
-                    />
-                    只排夜班（不排早/晚）
-                  </label>
-                  <label style={{ display: "grid", gap: 4, marginTop: 8, fontSize: 12, color: "#444" }}>
-                    特殊需求（文字）
-                    <textarea
-                      rows={2}
-                      value={ed.special_requirements}
-                      onChange={(ev) => {
-                        const v = ev.target.value;
-                        setEmployeeEdits((prev) => {
-                          const next = new Map(prev);
-                          next.set(e.id, { ...ed, special_requirements: v, dirty: true });
-                          return next;
-                        });
-                      }}
-                    />
-                  </label>
-                </div>
-              );
-            })}
-          </div>
-
-          <div style={{ marginTop: 12, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
-            <div style={{ fontWeight: 700, color: "#333" }}>班別代碼</div>
-            <div>
-              {shiftOptions.map((s) => (
-                <span key={s.id} style={{ marginRight: 10 }}>
-                  <b>{s.code}</b>={s.name}
-                </span>
-              ))}
+          <div className="card tableCard">
+            <div className="cardHeader">
+              <h2 className="cardTitle">班表</h2>
+              <span className="badge">
+                顯示 {visibleEmployees.length} 人 × {days} 天
+              </span>
             </div>
-            <div style={{ marginTop: 6 }}>
-              小提示：夜班（夜）隔天不會自動排早班（早）；如你先把「請假（L）」或手動班別填好，再用「不覆蓋」自動排班，就能保留特殊需求。
-            </div>
-          </div>
-        </div>
-
-        <div style={{ overflow: "auto", border: "1px solid #ddd", borderRadius: 8 }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 900 }}>
-            <thead>
-              <tr>
-                <th style={thStyleSticky}>員工</th>
-                {Array.from({ length: days }, (_, i) => {
-                  const day = i + 1;
-                  const dayStr = toDateStr(month, day);
-                  return (
-                    <th key={dayStr} style={thStyle}>
-                      <div style={{ fontWeight: 700 }}>{day}</div>
-                      <div style={{ fontSize: 12, color: "#666" }}>({weekdayLabel(dayStr)})</div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {employees.map((e) => (
-                <tr key={e.id}>
-                  <td style={tdStyleSticky}>
-                    <div style={{ fontWeight: 700 }}>{e.name}</div>
-                    <div style={{ fontSize: 12, color: "#666" }}>{e.active ? "啟用" : "停用"}</div>
-                  </td>
-                  {Array.from({ length: days }, (_, i) => {
-                    const day = i + 1;
-                    const dayStr = toDateStr(month, day);
-                    const k = keyOf(e.id, dayStr);
-                    const a = assignments.get(k);
-                    const isSaving = savingCell === k;
-                    return (
-                      <td key={k} style={tdStyle}>
-                        <select
-                          value={a?.shift_type_id ?? ""}
-                          onChange={(ev) => {
-                            const v = ev.target.value;
-                            void setCell(e.id, dayStr, v ? Number(v) : null);
-                          }}
-                          disabled={loading || isSaving}
-                          style={{
-                            width: "100%",
-                            padding: "6px 8px",
-                            borderRadius: 8,
-                            border: "1px solid #ddd",
-                            background: isSaving ? "#eef2ff" : "white",
-                          }}
-                        >
-                          <option value="">（空）</option>
-                          {shiftOptions.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.code}
-                            </option>
-                          ))}
-                        </select>
+            <div className="tableWrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th className="th thSticky">員工</th>
+                    {Array.from({ length: days }, (_, i) => {
+                      const day = i + 1;
+                      const dayStr = toDateStr(month, day);
+                      const h = isHoliday(dayStr);
+                      return (
+                        <th key={dayStr} className={`th ${h ? "isHoliday" : ""}`}>
+                          <div style={{ fontWeight: 900 }}>{day}</div>
+                          <div style={{ fontSize: 12, color: h ? "#7c2d12" : "#64748b" }}>({weekdayLabel(dayStr)})</div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleEmployees.map((e) => (
+                    <tr key={e.id} className="tr">
+                      <td className="td tdSticky">
+                        <div className="employeeName">{e.name}</div>
+                        <div className="employeeMeta">{e.active ? "啟用" : "停用"}</div>
                       </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      {Array.from({ length: days }, (_, i) => {
+                        const day = i + 1;
+                        const dayStr = toDateStr(month, day);
+                        const k = keyOf(e.id, dayStr);
+                        const a = assignments.get(k);
+                        const saving = savingCell === k;
+                        const h = isHoliday(dayStr);
+                        return (
+                          <td key={k} className={`td ${h ? "isHoliday" : ""}`}>
+                            <select
+                              value={a?.shift_type_id ?? ""}
+                              onChange={(ev) => {
+                                const v = ev.target.value;
+                                void setCell(e.id, dayStr, v ? Number(v) : null);
+                              }}
+                              disabled={loading || saving}
+                              className={`cellSelect ${saving ? "cellSelectSaving" : ""}`}
+                              aria-label={`${e.name} ${dayStr} 班別`}
+                            >
+                              <option value="">（空）</option>
+                              {shiftOptions.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.code}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
-const thStyle: CSSProperties = {
-  position: "sticky",
-  top: 0,
-  background: "#f6f8fa",
-  borderBottom: "1px solid #ddd",
-  padding: 8,
-  textAlign: "center",
-  whiteSpace: "nowrap",
-  zIndex: 1,
-};
-
-const thStyleSticky: CSSProperties = {
-  ...thStyle,
-  left: 0,
-  zIndex: 2,
-  textAlign: "left",
-  minWidth: 180,
-};
-
-const tdStyle: CSSProperties = {
-  borderBottom: "1px solid #eee",
-  padding: 6,
-  textAlign: "center",
-  minWidth: 46,
-};
-
-const tdStyleSticky: CSSProperties = {
-  ...tdStyle,
-  position: "sticky",
-  left: 0,
-  background: "white",
-  zIndex: 1,
-  textAlign: "left",
-  minWidth: 180,
-};
-
-
