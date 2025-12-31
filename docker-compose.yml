@@ -20,7 +20,7 @@ services:
     working_dir: /app
     volumes:
       - ./py-app:/app
-      - ./py-app/data:/app/data
+      - ${APP_DATA_DIR:-./py-app/data}:/app/data
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
@@ -38,7 +38,7 @@ services:
     working_dir: /app
     volumes:
       - ./py-app:/app
-      - ./py-app/data:/app/data
+      - ${APP_DATA_DIR:-./py-app/data}:/app/data
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1

@@ -244,6 +244,21 @@ SPA 站點重整不 404（很重要）：
 - 預設 DB 檔案：`./py-app/data/app.db`
 - 若要改用其他資料庫，可設定環境變數 `DATABASE_URL`
 
+#### 兩台電腦同步資料（方案 A 延伸）
+
+如果你想讓「另一台電腦」也看到同一份員工/班表資料，最簡單方式是把 SQLite 放到雲端同步資料夾（例如 OneDrive/Dropbox），並用 `APP_DATA_DIR` 指到該資料夾：
+
+> 注意：SQLite 不適合「兩台同時開著」寫入；建議一次只開一台。若要多人同時用，建議改用 Postgres/MySQL。
+
+**Windows（PowerShell）範例：**
+
+```powershell
+$env:APP_DATA_DIR="C:/Users/<你>/OneDrive/phone-data"
+docker compose up -d --build
+```
+
+兩台電腦都設定成同一個雲端同步資料夾後，就會共用同一個 `app.db`。
+
 ### 勞基法注意事項（重要）
 
 - 本專案提供的是「常見排班底線」的工程化約束（例如每 7 日至少休 2 日等），**不構成法律意見**。
